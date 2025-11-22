@@ -53,7 +53,8 @@ def formulae_one_etl():
         return edt_df.to_dict('records')
     @task
     def transform_drivers_task(driver_data):
-        tdt_df = transform_drivers(driver_data)
+        df = pd.DataFrame(driver_data)
+        tdt_df = transform_drivers(df)
         return tdt_df.to_dict('records')
     
     @task
@@ -62,8 +63,9 @@ def formulae_one_etl():
         return edt_df.to_dict('records')
     @task
     def transform_constructors_task(constructors_data):
-        tdt_df = transform_constuctors(constructors_data)
-        return tdt_df.to_dict('drivr_records')
+        df = pd.DataFrame(constructors_data)
+        ect_df = transform_constuctors(df)
+        return ect_df.to_dict('records')
     
     @task
     def load_drivers_to_database(transformed_drivers):
