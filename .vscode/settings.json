@@ -1,0 +1,3 @@
+{
+  "python.analysis.extraPaths": ["./formulae_1_batch_pipepline/src"]
+}
