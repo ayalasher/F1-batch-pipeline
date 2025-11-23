@@ -27,7 +27,7 @@ with DAG(
     default_args=default_args,
     description='F1 Championship ETL Pipeline - No External Modules',
     start_date=datetime(2024, 11, 22),
-    schedule="@weekly",  # Every Monday at 12 PM
+    schedule="@weekly",  
     catchup=False,
     tags=['f1', 'etl', 'championship', 'rewrite']
 ) as dag:
