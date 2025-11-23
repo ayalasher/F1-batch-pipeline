@@ -1,134 +1,193 @@
+from airflow import DAG
+from airflow.decorators import task
 from datetime import datetime, timedelta
-from airflow.decorators import dag , task
-import sys
-import os
-from sqlalchemy import create_engine
 import pandas as pd
+import requests
+import os
 import logging
-from dotenv import load_dotenv
-load_dotenv()
-
+from sqlalchemy import create_engine
 
 logging.basicConfig(
     level=logging.INFO,
-    format= '%(asctime)s - %(levelname)s - %(name)s - %(message)s',
-    filename='formula_one_pipelinee.log',
+    format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
+    filename='formula_one_pipeline_rewrite.log',
     filemode='a'
 )
 
 logger = logging.getLogger()
 
-
-"""
-email operator is going to be intergrated
-later on after testing and deploying the model to test
-CI/CD and the email sending capabilities
-"""
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-
-from drivers.drivers import extract_drivers , transform_drivers
-from constructors.constructors import extract_constructors , transform_constuctors
-
-# default args
 default_args = {
-    'owner':'ayalasher',
-    'retries':3,
-    'retry_delay':timedelta(minutes=5)
+    'owner': 'ayalasher',
+    'retries': 3,
+    'retry_delay': timedelta(minutes=1)
 }
 
-@dag(
-    dag_id='f1_etl_pipeline',
+with DAG(
+    dag_id="f1_etl_pipeline_rewrite",
     default_args=default_args,
-    description='F1 Championship ETL Pipeline',
-    schedule="0 12 * * 1",
+    description='F1 Championship ETL Pipeline - No External Modules',
     start_date=datetime(2024, 11, 22),
+    schedule="@weekly",  # Every Monday at 12 PM
     catchup=False,
-    tags=['f1', 'etl', 'championship']
-)
-def formulae_one_etl():
-    @task
-    def extract_drivers_task():
-        edt_df = extract_drivers()
-        return edt_df.to_dict('records')
-    @task
-    def transform_drivers_task(driver_data):
-        df = pd.DataFrame(driver_data)
-        tdt_df = transform_drivers(df)
-        return tdt_df.to_dict('records')
+    tags=['f1', 'etl', 'championship', 'rewrite']
+) as dag:
     
     @task
-    def extract_constructors_task():
-        edt_df = extract_constructors()
-        return edt_df.to_dict('records')
+    def extract_drivers():
+        try:
+            drivers_url = os.getenv("current_drivers_championship")
+            if not drivers_url:
+                raise ValueError("Driver championship URL not found in environment variables")
+            
+            response = requests.get(drivers_url)
+            response.raise_for_status()
+            response_json = response.json()
+            response_dict = response_json["drivers_championship"]
+            
+           
+            drivers_normalized = pd.json_normalize(response_dict, sep='_')
+            
+           
+            drivers_desired_columns = [
+                'driver_name',
+                'driver_surname', 
+                'points',
+                'position',
+                'team_teamId' 
+            ]
+            final_data = drivers_normalized[drivers_desired_columns]
+            
+            logger.info(f"Drivers data extraction successful - {len(final_data)} records extracted")
+            
+            
+            return final_data.to_dict('records')
+            
+        except Exception as e:
+            logger.error(f"Error extracting drivers data: {e}")
+            raise
+    
     @task
-    def transform_constructors_task(constructors_data):
-        df = pd.DataFrame(constructors_data)
-        ect_df = transform_constuctors(df)
-        return ect_df.to_dict('records')
+    def transform_drivers(drivers_data):
+        try:
+            
+            df = pd.DataFrame(drivers_data)
+            cleaned_df = df.dropna()
+            
+            logger.info(f"Drivers data transformation successful - {len(cleaned_df)} records after cleaning")
+            return cleaned_df.to_dict('records')
+            
+        except Exception as e:
+            logger.error(f"Error transforming drivers data: {e}")
+            raise
+    
+    @task
+    def extract_constructors():
+        try:
+            constructors_url = os.getenv("current_constructors_championship")
+            if not constructors_url:
+                raise ValueError("Constructors championship URL not found in environment variables")
+            
+            response = requests.get(constructors_url)
+            response.raise_for_status()
+            response_json = response.json()
+            response_dict = response_json["constructors_championship"]
+            constructors_normalized = pd.json_normalize(response_dict, sep='_')
+            constructors_desired_columns = [
+                "teamId",
+                "points",
+                "position",
+                "wins",
+                "team_teamName" 
+            ]
+            final_data = constructors_normalized[constructors_desired_columns]
+            
+            logger.info(f"Constructors data extraction successful - {len(final_data)} records extracted")
+            return final_data.to_dict('records')
+            
+        except Exception as e:
+            logger.error(f"Error extracting constructors data: {e}")
+            raise
+    
+    @task
+    def transform_constructors(constructors_data):
+        try:
+            df = pd.DataFrame(constructors_data)
+            cleaned_df = df.dropna()
+            
+            logger.info(f"Constructors data transformation successful - {len(cleaned_df)} records after cleaning")
+            return cleaned_df.to_dict('records')
+            
+        except Exception as e:
+            logger.error(f"Error transforming constructors data: {e}")
+            raise
     
     @task
     def load_drivers_to_database(transformed_drivers):
-        df = pd.DataFrame(transformed_drivers)
-        connection_string = (
-            f"postgresql://{os.getenv('POSTGRES_USER')}:"
-            f"{os.getenv('POSTGRES_PASSWORD')}@"
-            f"{os.getenv('POSTGRES_HOST')}:"
-            f"{os.getenv('POSTGRES_PORT')}/"
-            f"{os.getenv('POSTGRES_DB')}"
-        )
-
-        engine = create_engine(connection_string)
         try:
+            df = pd.DataFrame(transformed_drivers)
+            connection_string = (
+                f"postgresql://{os.getenv('POSTGRES_USER')}:"
+                f"{os.getenv('POSTGRES_PASSWORD')}@"
+                f"{os.getenv('POSTGRES_HOST')}:"
+                f"{os.getenv('POSTGRES_PORT')}/"
+                f"{os.getenv('POSTGRES_DB')}"
+            )
+            engine = create_engine(connection_string)
             df.to_sql(
-               name='drivers_championship',
+                name='drivers_championship',
                 con=engine,
                 if_exists='replace',  # Options: 'fail', 'replace', 'append'
                 index=False,
-                method='multi',  
+                method='multi',
             )
-            logging.info("drivers data has been succesfully loaded into the database")
-        except Exception as e:
-            logging.error(f"an error {e} occured when loading the data into the database")
-            raise
-        finally:
+            
+            logger.info(f"Drivers data successfully loaded to database - {len(df)} records")
+            
             engine.dispose()
-
+            
+            return f"Successfully loaded {len(df)} driver records"
+            
+        except Exception as e:
+            logger.error(f"Error loading drivers data to database: {e}")
+            raise
+    
     @task
     def load_constructors_to_database(transformed_constructors):
-        df = pd.DataFrame(transformed_constructors)
-        connection_string = (
-            f"postgresql://{os.getenv('POSTGRES_USER')}:"
-            f"{os.getenv('POSTGRES_PASSWORD')}@"
-            f"{os.getenv('POSTGRES_HOST')}:"
-            f"{os.getenv('POSTGRES_PORT')}/"
-            f"{os.getenv('POSTGRES_DB')}"
-        )
-        
-        engine = create_engine(connection_string)
         try:
+            df = pd.DataFrame(transformed_constructors)
+            connection_string = (
+                f"postgresql://{os.getenv('POSTGRES_USER')}:"
+                f"{os.getenv('POSTGRES_PASSWORD')}@"
+                f"{os.getenv('POSTGRES_HOST')}:"
+                f"{os.getenv('POSTGRES_PORT')}/"
+                f"{os.getenv('POSTGRES_DB')}"
+            )
+            
+            engine = create_engine(connection_string)
+            
             df.to_sql(
-               name='constructors_championship',
+                name='constructors_championship',
                 con=engine,
                 if_exists='replace',  # Options: 'fail', 'replace', 'append'
                 index=False,
-                method='multi',  
+                method='multi',
             )
-            logging.info("drivers data has been succesfully loaded into the database")
-        except Exception as e:
-            logging.error(f"an error {e} occured when trying to load data to the constructors table")
-            raise
-        finally:
+            
+            logger.info(f"Constructors data successfully loaded to database - {len(df)} records")
+            
             engine.dispose()
-
-    drivers_extracted = extract_drivers_task()
-    drivers_transformed = transform_drivers_task(drivers_extracted)
+            
+            return f"Successfully loaded {len(df)} constructor records"
+            
+        except Exception as e:
+            logger.error(f"Error loading constructors data to database: {e}")
+            raise
+    drivers_extracted = extract_drivers()
+    drivers_transformed = transform_drivers(drivers_extracted)
     drivers_loaded = load_drivers_to_database(drivers_transformed)
-    
-    # Constructors pipeline (runs in parallel)
-    constructors_extracted = extract_constructors_task()
-    constructors_transformed = transform_constructors_task(constructors_extracted)
+
+    constructors_extracted = extract_constructors()
+    constructors_transformed = transform_constructors(constructors_extracted)
     constructors_loaded = load_constructors_to_database(constructors_transformed)
 
-
-f1_etl_dag = formulae_one_etl()
+    drivers_extracted >> drivers_transformed >> drivers_loaded >> constructors_extracted >> constructors_transformed >> constructors_loaded
