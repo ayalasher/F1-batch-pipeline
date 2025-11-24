@@ -1,5 +1,6 @@
 from airflow import DAG
 from airflow.decorators import task
+from airflow.models import Variable
 from datetime import datetime, timedelta
 import pandas as pd
 import requests
@@ -35,9 +36,9 @@ with DAG(
     @task
     def extract_drivers():
         try:
-            drivers_url = os.getenv("current_drivers_championship")
+            drivers_url = Variable.get("current_drivers_championship", default_var=None)
             if not drivers_url:
-                raise ValueError("Driver championship URL not found in environment variables")
+                raise ValueError("Driver championship URL not found in Airflow Variables")
             
             response = requests.get(drivers_url)
             response.raise_for_status()
@@ -83,9 +84,9 @@ with DAG(
     @task
     def extract_constructors():
         try:
-            constructors_url = os.getenv("current_constructors_championship")
+            constructors_url = Variable.get("current_constructors_championship", default_var=None)
             if not constructors_url:
-                raise ValueError("Constructors championship URL not found in environment variables")
+                raise ValueError("Constructors championship URL not found in Airflow Variables")
             
             response = requests.get(constructors_url)
             response.raise_for_status()
@@ -126,11 +127,11 @@ with DAG(
         try:
             df = pd.DataFrame(transformed_drivers)
             connection_string = (
-                f"postgresql://{os.getenv('POSTGRES_USER')}:"
-                f"{os.getenv('POSTGRES_PASSWORD')}@"
-                f"{os.getenv('POSTGRES_HOST')}:"
-                f"{os.getenv('POSTGRES_PORT')}/"
-                f"{os.getenv('POSTGRES_DB')}"
+                f"postgresql://{Variable.get('POSTGRES_USER')}:"
+                f"{Variable.get('POSTGRES_PASSWORD')}@"
+                f"{Variable.get('POSTGRES_HOST')}:"
+                f"{Variable.get('POSTGRES_PORT')}/"
+                f"{Variable.get('POSTGRES_DB')}"
             )
             engine = create_engine(connection_string)
             df.to_sql(
@@ -156,11 +157,11 @@ with DAG(
         try:
             df = pd.DataFrame(transformed_constructors)
             connection_string = (
-                f"postgresql://{os.getenv('POSTGRES_USER')}:"
-                f"{os.getenv('POSTGRES_PASSWORD')}@"
-                f"{os.getenv('POSTGRES_HOST')}:"
-                f"{os.getenv('POSTGRES_PORT')}/"
-                f"{os.getenv('POSTGRES_DB')}"
+                f"postgresql://{Variable.get('POSTGRES_USER')}:"
+                f"{Variable.get('POSTGRES_PASSWORD')}@"
+                f"{Variable.get('POSTGRES_HOST')}:"
+                f"{Variable.get('POSTGRES_PORT')}/"
+                f"{Variable.get('POSTGRES_DB')}"
             )
             
             engine = create_engine(connection_string)
